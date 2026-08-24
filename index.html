@@ -16,7 +16,6 @@
   <style>
     html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; }
    
-    /* Forza visibilità lente e ricerca in alto a sinistra */
     .leaflet-control-search {
       border: 2px solid #0066ff !important;
       border-radius: 8px !important;
@@ -78,14 +77,12 @@
       }).addTo(map);
     }
 
-    // Caricamento GeoJSON flessibile
     fetch('map.geojson')
       .then(response => {
         if (!response.ok) throw new Error('File map.geojson non trovato nel server');
         return response.json();
       })
       .then(data => {
-        // Normalizza i nomi delle proprietà per la ricerca
         data.features.forEach(f => {
           if (f.properties) {
             f.properties.search_name = f.properties.name || f.properties.title || f.properties.Cappella || f.properties.id || "Cappella";
@@ -96,9 +93,21 @@
           onEachFeature: function (feature, layer) {
             var nomePunto = feature.properties.search_name;
            
+            // Calcola le coordinate sia se il layer è un Marker/Point sia se è un Polygon/Area
+            var lat, lng;
+            if (typeof layer.getLatLng === 'function') {
+              var pos = layer.getLatLng();
+              lat = pos.lat;
+              lng = pos.lng;
+            } else if (typeof layer.getBounds === 'function') {
+              var center = layer.getBounds().getCenter();
+              lat = center.lat;
+              lng = center.lng;
+            }
+           
             var popupContent = '<div style="text-align:center;">' +
               '<b>' + nomePunto + '</b><br><br>' +
-              '<button onclick="avviaNavigazione(' + layer.getLatLng().lat + ',' + layer.getLatLng().lng + ')" ' +
+              '<button onclick="avviaNavigazione(' + lat + ',' + lng + ')" ' +
               'style="background:#0066ff; color:white; border:none; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">' +
               '🧭 Ottieni Percorso</button></div>';
              
@@ -106,12 +115,10 @@
           }
         }).addTo(map);
 
-        // Centra automaticamente la mappa sui punti se esistono
         if (geojsonLayer.getBounds().isValid()) {
           map.fitBounds(geojsonLayer.getBounds());
         }
 
-        // Aggiunge la ricerca
         var searchControl = new L.Control.Search({
           layer: geojsonLayer,
           propertyName: 'search_name',
@@ -134,7 +141,6 @@
         alert("Errore: " + err.message + ". Verifica che map.geojson sia caricato su GitHub nella stessa cartella.");
       });
 
-    // GPS
     map.locate({ setView: false, watch: true, enableHighAccuracy: true });
     var userMarker, userCircle;
 
