@@ -5,31 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Mappa Cimitero</title>
  
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <!-- Leaflet Search CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-search@3.0.2/dist/leaflet-search.min.css" />
-  <!-- Leaflet Routing Machine CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
  
-  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- Leaflet Search JS -->
   <script src="https://unpkg.com/leaflet-search@3.0.2/dist/leaflet-search.min.js"></script>
-  <!-- Leaflet Routing Machine JS -->
   <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.min.js"></script>
 
   <style>
     html, body, #map { height: 100%; width: 100%; margin: 0; padding: 0; }
    
-    /* Stile forzato per la barra e la lente di ricerca */
+    /* Forza visibilità lente e ricerca in alto a sinistra */
     .leaflet-control-search {
       border: 2px solid #0066ff !important;
       border-radius: 8px !important;
       background: #ffffff !important;
       box-shadow: 0 4px 10px rgba(0,0,0,0.3) !important;
-      margin-top: 10px !important;
-      margin-left: 10px !important;
+      margin-top: 12px !important;
+      margin-left: 12px !important;
       z-index: 1000 !important;
     }
 
@@ -49,32 +43,24 @@
       font-size: 14px !important;
       border-radius: 6px !important;
     }
-
-    .leaflet-control-container .leaflet-routing-container {
-      max-width: 260px;
-      font-size: 12px;
-    }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <script>
-    // Coordinate centrate sul cimitero
     var map = L.map('map').setView([41.9266, 15.8812], 18);
     var userLatLng = null;
     var routingControl = null;
 
-    // 1. Sfondo OpenStreetMap
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 22,
       maxNativeZoom: 19,
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // 2. Funzione per calcolare il percorso pedonale
     function calcolaPercorso(destinazione) {
       if (!userLatLng) {
-        alert("Attendi il segnale GPS... Assicurati di aver attivato la geolocalizzazione sullo smartphone.");
+        alert("In attesa del segnale GPS... Assicurati di aver attivato la localizzazione sullo smartphone.");
         return;
       }
 
@@ -83,54 +69,56 @@
       }
 
       routingControl = L.Routing.control({
-        waypoints: [
-          userLatLng,
-          destinazione
-        ],
-        router: L.Routing.osrmv1({
-          profile: 'foot'
-        }),
-        lineOptions: {
-          styles: [{ color: '#0066ff', opacity: 0.85, weight: 6 }]
-        },
+        waypoints: [userLatLng, destinazione],
+        router: L.Routing.osrmv1({ profile: 'foot' }),
+        lineOptions: { styles: [{ color: '#0066ff', opacity: 0.85, weight: 6 }] },
         createMarker: function() { return null; },
         show: true,
         addWaypoints: false
       }).addTo(map);
     }
 
-    // 3. Carica il file map.geojson presente nella stessa cartella
+    // Caricamento GeoJSON flessibile
     fetch('map.geojson')
       .then(response => {
-        if (!response.ok) {
-          throw new Error('Impossibile trovare il file map.geojson');
-        }
+        if (!response.ok) throw new Error('File map.geojson non trovato nel server');
         return response.json();
       })
       .then(data => {
+        // Normalizza i nomi delle proprietà per la ricerca
+        data.features.forEach(f => {
+          if (f.properties) {
+            f.properties.search_name = f.properties.name || f.properties.title || f.properties.Cappella || f.properties.id || "Cappella";
+          }
+        });
+
         var geojsonLayer = L.geoJSON(data, {
           onEachFeature: function (feature, layer) {
-            if (feature.properties && (feature.properties.name || feature.properties.title)) {
-              var nomePunto = feature.properties.name || feature.properties.title;
+            var nomePunto = feature.properties.search_name;
+           
+            var popupContent = '<div style="text-align:center;">' +
+              '<b>' + nomePunto + '</b><br><br>' +
+              '<button onclick="avviaNavigazione(' + layer.getLatLng().lat + ',' + layer.getLatLng().lng + ')" ' +
+              'style="background:#0066ff; color:white; border:none; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">' +
+              '🧭 Ottieni Percorso</button></div>';
              
-              var popupContent = '<div style="text-align:center;">' +
-                '<b>' + nomePunto + '</b><br><br>' +
-                '<button onclick="avviaNavigazione(' + layer.getLatLng().lat + ',' + layer.getLatLng().lng + ')" ' +
-                'style="background:#0066ff; color:white; border:none; padding:8px 12px; border-radius:6px; font-weight:bold; cursor:pointer;">' +
-                '🧭 Ottieni Percorso</button></div>';
-               
-              layer.bindPopup(popupContent);
-            }
+            layer.bindPopup(popupContent);
           }
         }).addTo(map);
 
-        // Barra di Ricerca visibile in alto a sinistra
+        // Centra automaticamente la mappa sui punti se esistono
+        if (geojsonLayer.getBounds().isValid()) {
+          map.fitBounds(geojsonLayer.getBounds());
+        }
+
+        // Aggiunge la ricerca
         var searchControl = new L.Control.Search({
           layer: geojsonLayer,
-          propertyName: 'name',
+          propertyName: 'search_name',
           marker: false,
           position: 'topleft',
           textPlaceholder: 'Cerca cappella...',
+          initial: false,
           moveToLocation: function(latlng, title, map) {
             map.setView(latlng, 20);
           }
@@ -142,14 +130,15 @@
 
         map.addControl(searchControl);
       })
-      .catch(err => console.error('Errore durante il caricamento del GeoJSON:', err));
+      .catch(err => {
+        alert("Errore: " + err.message + ". Verifica che map.geojson sia caricato su GitHub nella stessa cartella.");
+      });
 
-    // 4. GPS in Tempo Reale
-    map.locate({ setView: true, watch: true, enableHighAccuracy: true });
-
+    // GPS
+    map.locate({ setView: false, watch: true, enableHighAccuracy: true });
     var userMarker, userCircle;
 
-    function onLocationFound(e) {
+    map.on('locationfound', function(e) {
       userLatLng = e.latlng;
       var radius = e.accuracy / 2;
 
@@ -160,9 +149,7 @@
         userMarker = L.marker(e.latlng).addTo(map).bindPopup("Ti trovi qui");
         userCircle = L.circle(e.latlng, radius).addTo(map);
       }
-    }
-
-    map.on('locationfound', onLocationFound);
+    });
 
     window.avviaNavigazione = function(lat, lng) {
       calcolaPercorso(L.latLng(lat, lng));
